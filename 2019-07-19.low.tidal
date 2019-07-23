@@ -1,0 +1,220 @@
+
+hush
+
+:t par
+
+let wave = slow 8
+          $ (fast 4 (6*pi*saw) + slow 2 (8*pi*saw ))
+    wave2 = slow 16
+          $ (fast 2 (2*pi*saw) + fast 2 (8*pi*wave ))
+    frac :: (Floating a,Real a) => Pattern a -> Pattern a
+    frac = (\x -> (x - (fromIntegral <$> (floor.toRational) <$> x)) )
+    scale = getScale (scaleTable ++ [("low", [0,0,2,2,4,5,7,7,9,9,11])])
+    mirrorToMidi chan = off 0 ((#s "midi").(#midichan chan))
+    tranform =
+            (every 8 (slow 3) .
+            -- (outside 4 rev).(slow 2).
+            -- (linger (1/8)).
+            -- (segment 1).
+            (slow (slow 16 $ "<1 [1 [[2 1]*3]@3] [1@2 [3 1] 1]>")).
+            (every 2 $ inside 6 $ every 3 $ (((1/3) <~) . iter 6 . slow 4)))
+    harmFx = (
+      (flip mod 14).
+      -- (slow 2).
+      -- (outside 4 rev).
+      -- (* 11).
+      -- (+ 7)
+      (* (slow 16 $ "<2 [2 5@3] [0@2 2 7]>")).
+      (+ (slow 16 $ "<0 [0@2 4 2] [5@2 2 -5]>"))
+      )
+    par fxs p =  stack (fmap ( $p) fxs)
+in
+do {
+  resetCycles;
+  setbpm 133;
+  d1
+  -- clutchIn 1 16
+  -- clutchIn 1 48
+  $ mirrorToMidi 0
+  $ tranform
+  $ inside 6 (
+    every 3 (
+      off 0 (
+      whenmod 14 8 (const silence) .
+      (#s "modal02").
+      (#legato 2).
+      (#octave 5).
+      (#orbit 4).
+      (#delay 0.8).
+      (#delaytime (1/12)).
+      (#delayfeedback (1/3)).
+      (#note (scale "low" $ harmFx $ chooseBy (frac $ wave) [12,9,5,10,7,2])))
+      )
+    )
+  -- $ whenmod 9 8 (const silence)
+  $ fast (chooseBy (frac wave2) [1,3])
+  $ slow (chooseBy (slow 4 $ frac wave) [3,2])
+  $ fast 4
+  -- $ sometimes one
+  $ n "0(2,6,<0 [0 3]>)" #s "EFM"
+  # octer (frac wave)
+  # speed (range 1.2 0.66 $ slow 2 $cos $ wave)
+  # gain (range 0.4 1.2 $ slow 4 $ tanh $wave)
+  # lpf (range 2000 300 $ cos (wave2))
+  -- # silence
+  ;
+  d2
+  $ mirrorToMidi 1
+  $ tranform
+  $ ((2/3)~>)
+  -- $ inside 2 (every 2 (often (off 0 ((# s "opDrm01").(# gain 0.8)))))
+  -- $ spread (stack) []
+  $ par [
+    juxBy saw ((|+ note 19).(|+ pF "stiffness" (0.25))),
+    whenmod 24 8 (const silence) .
+    inside 6 (
+      every 3 (
+        off 0 (
+        (#s "opDrm02").
+        (# gain 0.8).
+        (#legato 1).
+        (#octave 3).
+        (#orbit 3).
+        (# pF "brightness" 0.01).
+        (# pF "feedback" 0.01).
+        -- (#delay 0.8).
+        -- (#delaytime (1/12)).
+        -- (#delayfeedback (1/3)).
+        (#note (scale "low"$ harmFx $ chooseBy (frac $ wave) [12,9,5,10,7,2])))
+        )
+      ),
+    sometimes (off (-1/12) $ stut 3 0.85 (1/12))
+  ]
+  $ s "fmSnare01"
+  # room 0.01
+  # octer (frac wave2)
+  -- # delay (0.7*(cos $ slow 8 $ wave2))
+  # delaytime (1/12)
+  # delayfeedback 0.3
+  # lock 1
+  # orbit 1
+  -- # silence
+  ;
+  d3
+  -- xfadeIn 3 4
+  $ mirrorToMidi 2
+  $ tranform
+  $ ((4/6)~>)
+  $ sometimes (juxBy 0 $ ((1/6)<~).stut 2 0.7 (1/6))
+  -- $ fast (chooseBy (cos(wave2)) [1,2])
+  $ degradeBy (cos(wave)) $ s "EFM:3(<4 4 3 4>,6,<0>)"
+  # gain (range 0.7 1 $ slow 8 $ tanh $ (wave+wave2)*saw)
+  # octer (range 0.1 1 $ slow 3 $ frac $ wave+wave2)
+  # speed (range "1.1" "0.9" $ slow 6 $ frac $ wave+wave2)
+  # delay (0.7*(tanh $ wave2))
+  # delaytime (2/12)
+  # delayfeedback 0.3
+  # orbit 2
+  -- # silence
+  ;
+  d4
+  -- clutchIn 4 32
+  $ mirrorToMidi 3
+  $ mono
+  $ tranform
+  $ whenmod 9 8 (const silence)
+  $ ((1/3)~>)
+  $ stut (chooseBy (frac(wave2*wave)) [0,3,2,1]) 0.85 (1/12)
+  $ fast (chooseBy (frac(wave)) [1,3,2,0.5])
+  -- $ off 0 ((|+ note 12).(#octer 0.25))
+  $ s "fm02(2,6,<3 [3 0] 0 [0 3]>)"
+  # note (
+    scale "low" $
+    harmFx $
+    chooseBy (fast 4 $ saw) [0,7,12,14,11]
+    -- chooseBy ((* "-1")$fast 4 $ cos(wave2)) [0,5,2,14,(-1)]
+    +
+    chooseBy (frac $ wave) [0,5,2,14,(-1),7]
+    + "<0 0 5 [2 7]>"
+    )
+  # octave 3
+  -- # decay 4
+  # legato 2
+  # cut 4
+  # gain 1.5
+  # pF "harmonic" 1
+  # pF "brightness" (range 0 0.25 $ cos(wave2))
+  # orbit 3
+  -- # silence
+  ;
+  d5
+  -- clutchIn 5 8
+  -- clutchIn 5 16
+  $ mirrorToMidi 4
+  $ whenmod 18 16 (const silence)
+  $ juxBy 0.73 (#pF "feedback" (range 0 0.01 $ cos $ wave2))
+  $ struct (every 4 (slow 3) $ "t")
+  $ s ("fm02(2,6)")
+  # note (
+    scale "low" $
+    harmFx $
+    chooseBy (frac $ wave) [0,5,2,14,(-1),7] +
+    stack [
+      "<12 -5>"-- +chooseBy (slow 4 $ frac $ wave) [14,11]
+      ,
+      -- "<7 5 12 -7>"-- +chooseBy (slow 4 $ frac $ wave) [7]
+      -- ,
+      chooseBy (frac $ wave) [12,9,5,10,7,2]
+      ,
+      "<0 9>" +chooseBy (frac $ wave) [0,4,2,(-12)]
+    ] + "<0 0 5 [2 7]>"
+    )
+  # octave 5
+  # legato 3
+  # gain 0.9
+  # pF "harmonic" 1
+  # pF "feedback" 0.001
+  # pF "brightness" (range 0.1 0.125 $ cos(wave2))
+  # delay (0.7*(cos $ slow 8 $ wave2))
+  # delaytime (4/12)
+  # delayfeedback 0.5
+  # attack 0.43
+  # decay 4
+  # release 2.33
+  # room 1
+  # orbit 4
+  -- # silence
+  ;
+  d6
+  $ mirrorToMidi 5
+  $ off (2/3) (|+ note 12)
+  $ struct (
+    off (1/3) (slow (chooseBy (frac wave2) [3,2,1,4]) )$
+    slow (chooseBy (frac wave) [3,2,1,4]) $ "t"
+  )
+  $ s "[stat4op,fm02]"
+  # octave 5
+  # gain 0.9
+  # note (
+    scale "low" $
+    harmFx $
+    -- condFx "t(4,12,6)" (off 0 (|+ 7)) $
+    -- chooseBy (frac $ wave) [0,5,2,14,(-1),7]
+    chooseBy (frac $ wave) [12,9,5,10,7,2]
+    )
+  # octer 0.2
+  # room 1
+  # pF "harmonic" 0.5
+  # pF "brightness" 0.0001
+  # release 4
+  # legato 2
+  # pF "op1attack" 0.31
+  # pF "op2attack" 0.31
+  # pF "op3attack" 0.31
+  # pF "op4attack" 0.31
+  # hpf 250
+  # orbit 5
+  ;
+}
+
+hush
